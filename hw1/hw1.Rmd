@@ -1,7 +1,7 @@
 ---
 title: "MS&E349 HW 1"
-author: "Sven Lerner, Jordan Rowley"
-date: "1/17/2021"
+author: "Tracy Cao, Sven Lerner, Jordan Rowley"
+date: "1/23/2021"
 output: pdf_document
 ---
 
@@ -17,7 +17,7 @@ library(rugarch)  # for use in question 4.1
 library(car)      # for use in question 4.4
 ```
 
-## Question 3: ARIMA
+# Question 3: ARIMA
 ## 1.
 First we'll import and plot the oil price data along with its first-difference.
 
@@ -31,18 +31,18 @@ plot(oil_prices_ts)
 plot(diff(oil_prices_ts))
 ```
 
-# 2.
+## 2.
 
 While the first-differenced series seems to be centered about a mean of zero, we see clustering of volatility, which indicates that the series is not weakly stationary.  While this series does not appear to be stationary, we will use the augmented Dickey-Fuller test to measure whether this series exhibits unit-root behavior.
 
-# 3.
+## 3.
 
 ```{r ADF}
 adf.test(diff(oil_prices_ts)[-1])
 ```
 The ADF test gives us reason to believe that this series is indeed weakly stationary!  We should therefore expect the ACF and PACF to be relatively tame.
 
-# 4.
+## 4.
 
 ```{r ACF_PACF}
 acf(diff(oil_prices_ts)[-1], lag.max = 40)
@@ -51,73 +51,88 @@ pacf(diff(oil_prices_ts)[-1], lag.max = 40)
 ```
 We see oscillatory behavior in both the ACF and PACF.  This indicates that there are both moving-average and autoregressive processes at work within this time series, but we do not see many spikes exceeding the blue 95% lines.  Perhaps this series is well-approximated by white noise?  We will use the Ljung-Box test to measure this.
 
-# 5.
+## 5.
 
 ```{r Ljung_box}
 Box.test(diff(oil_prices_ts)[-1], type = "Ljung-Box", lag = 12)
 ```
 The small p-value indicates that there is indeed some structure in this time series that could be explained by moving-average or autoregressive processes.
 
-# 6.
+## 6.
 
-Let's fit an $$AR(p)$$ model to this time series.  To estimate $$p$$, we notice that the PACF assumes relatively smaller values after lag 1, which indicates that an $$AR(1)$$ model may be appropriate.  On the other hand, we also see spikes occur in intervals roughly equal to 6, indicating that an $$AR(6)$$ model may work well too, with $$\phi_2 = ... = \phi_5 = 0$$.  We'll compare the AIC of these models
+Let's fit an $AR(p)$ model to this time series.  To estimate $p$, we notice that the PACF assumes relatively smaller values after lag 1, which indicates that an $AR(1)$ model may be appropriate.  On the other hand, we also see spikes occur in intervals roughly equal to 6, indicating that an $AR(6)$ model may work well too, with $\phi_2 = ... = \phi_5 = 0$.  We'll compare the AIC of these models.
 
 ```{r AR1_fit}
 model1 <- arima(diff(oil_prices_ts)[-1], order = c(1, 0, 0))
 model2 <- arima(diff(oil_prices_ts)[-1], order = c(6, 0, 0))
+
 summary(model1)
-print("-----------------------------------------------------------------------------------------------------------")
 summary(model2)
 ```
-We exclude the intercept/mean terms given its low t-score, in addition to the ar2 through ar5 terms.  With these terms excluded, the aic of the $$AR(6)$$ model increases by roughly 10, while that of the $$AR(1)$$ model increases by about 2 (since the log likelihood will also change).  Since the AIC of the $$AR(6)$$ model is slightly higher, we choose a simpler $$AR(1)$$ model of the form
+We exclude the intercept/mean terms given its low t-score, in addition to the $\phi_2 \dots \phi_5$ terms.  With these terms excluded, the aic of the $AR(6)$ model increases by roughly 10, while that of the $AR(1)$ model increases by about 2 (since the log likelihood will also change).  Since the AIC of the $AR(6)$ model is slightly higher, we choose a simpler $AR(1)$ model of the form
 
 $$
 Y_{t} = \phi_1 Y_{t-1} +  \epsilon_{t}
 $$
-with $$\phi_1 \approx$$ 0.3997, $$\epsilon_{t} \sim N(0, \sigma^2)$$ where $$\sigma^2 \approx 15.68$$.
+with $\phi_1 \approx$ 0.3997, $\epsilon_{t} \sim N(0, \sigma^2)$ where $\sigma^2 \approx 15.68$.
 
 
 
-#7.   
+## 7.   
 
 Now we will fit an ARIMA model to our time series.  To decide between models, we will again use the AIC.
 
 ```{r ARIMA, warning=FALSE}
-min_aic = Inf  # keep a running min
-min_p <- 0
-min_q <- 0
-for (p in 0:6){
-    for (q in 0:6){
-      
-      aic = arima(diff(oil_prices_ts)[-1], order = c(p, 0, q), include.mean = TRUE)$aic
-      if (aic < min_aic){
-        min_aic = aic
-        min_p <- p
-        min_q <- q
+min_aic <- Inf # keep a running min
+best_order <- c(0, 0, 0)
+  for (p in 0:6) for (q in 0:6){
+    if ( p==0 && q == 0){
+      next
+    }
+    arimaFit <- tryCatch(arima(diff(oil_prices_ts)[-1], order = c(p, 0, q)),
+                          error = function(err) FALSE,  # turn failures to converge into logical outputs
+                          warning = function(err) FALSE)
+                              
+    if (!is.logical(arimaFit)){  # if convergence took place
+      current_aic <- AIC(arimaFit)
+      if(current_aic < min_aic){
+        min_aic <- current_aic
+        best_order <- c(p, 0, q)
+        final.arima <- arima(diff(oil_prices_ts)[-1], order=best_order)
       }
+    }
+    else {
+      next
+    }
   }
-}
-arima_model <- arima(diff(oil_prices_ts)[-1], order = c(min_p, 0, min_q), include.mean = TRUE)
-arima_model$coef
-arima_model$var.coef  # probably shouldn't display this
+arima_model <- arima(diff(oil_prices_ts)[-1], order = best_order, include.mean = TRUE)
+print(arima_model$coef / sqrt(diag(arima_model$var.coef)))  #obtain t-ratios for each estimate
+print(arima_model$sigma2) #esimate of noise variance
 ```
 
-(now fit an ARIMA(1, 0, 6)) model?
+An ARIMA(5, 0, 3) model has the minimal AIC.  The intercept term is excluded given its low t-ratio.  The fitted model is therefore of the form $\Phi(B)Y_t = \Theta(B)\epsilon_t$, where $\Phi(B) = 1 - \phi_1 - \dots -\phi_5$, $\Theta(B) = 1 - \theta_1 - \theta_2 - \theta_3$, and $\epsilon_i \sim N(0, \sigma^2)$, $\sigma^2 \approx 14.6$
 
-# 8
+## 8
 
-Now we will give a 4-step forecast along with 95% intervals:
+Now we will fit and ARIMA(1, 0, 6) model, and give a 4-step forecast along with 95% intervals.  First, we determine whether we should include the mean in our model.
+
+```{r Arima_106_fit}
+arima_model <- arima(diff(oil_prices_ts)[-1], order = c(1, 0, 6), include.mean = TRUE)
+print(arima_model$coef / sqrt(diag(arima_model$var.coef)))  #obtain t-ratios for each estimate
+```
+The now t-ratio for the intercept terms warrants its exclusion in our model.  We now create a forecast without it.
 
 ```{r ARIMA_95_plot}
-arima_model <- arima(diff(oil_prices_ts)[-1], order = c(1, 0, 6), include.mean = TRUE)
+arima_model <- arima(diff(oil_prices_ts)[-1], order = c(1, 0, 6), include.mean = FALSE)
+
 four_step_forecast <- forecast(arima_model, h = 4)
-plot(four_step_forecast, xlim = c(300, 365))
+plot(four_step_forecast, xlim = c(300, 365))  # zoom in
 four_step_forecast
 ```
-## 4.  GARCH
+# Question 4.  GARCH
 
 
-#1. 
+##1. 
 ```{r AMZN_import}
 
 stocks_daily_ret <- read.table("d-amzn3dx0914.txt", header = TRUE)
@@ -130,47 +145,85 @@ mean(amzn_ts)
 The expected value of the percentage log returns is not equal to zero.  The value of this stock increased by a factor of 6 over this time interval, so this is understandable.
 
 
-#2.
+##2.
 
 ```{r serial_corr_amzn}
 acf(amzn_ts, lag.max = 40)
 pacf(amzn_ts, lag.max = 40)
 ```
 
-We do not see significant serial correlations in $$r_t$$.
+We do not see significant serial correlations in $r_t$.
 
 
-#3.
+##3.
 
-Now we will fit an ARMA-GARCH model to the returns.  Using the AIC once more, we will determine proper values for the $$p$$ $$q$$ parameters of the component ARMA process.  Then we use the same method to determine the proper parameters for the GARCH component.
+Now we will fit an ARMA-GARCH model to the returns.  Using the AIC once more, we will determine proper values for the $p$ $q$ parameters of the component ARMA process.  Then we use the same method to determine the proper parameters for the GARCH component.
 
 
 ```{r AMZN_GARCH, warning=FALSE}
 
 #ARMA fit  (fix this part)(!)
-min_aic = Inf  # keep a running min
-min_p <- 0
-min_q <- 0
-for (p in 0:6){
-    for (q in 0:6){
-      
-      aic = arima(amzn_ts, order = c(p, 0, q), include.mean = TRUE)$aic
-      if (aic < min_aic){
-        min_aic = aic
-        min_p <- p
-        min_q <- q
+min_aic <- Inf # keep a running min
+best_order <- c(0, 0, 0)
+  for (p in 0:6) for (q in 0:6){
+    if ( p==0 && q == 0){
+      next
+    }
+    arimaFit <- tryCatch(arima(amzn_ts, order = c(p, 0, q)),
+                          error = function(err) FALSE,  # turn failures to converge into logical outputs
+                          warning = function(err) FALSE)
+                              
+    if (!is.logical(arimaFit)){  # if convergence took place
+      current_aic <- AIC(arimaFit)
+      if(current_aic < min_aic){
+        min_aic <- current_aic
+        best_order <- c(p, 0, q)
+        final.arima <- arima(amzn_ts, order=best_order)
       }
+    }
+    else {
+      next
+    }
   }
-}
 
 #GARCH fit
 
-garch_spec <- ugarchspec(variance.model=list(garchOrder=c(1,1)),
-                      mean.model=list(armaOrder=c(min_p, min_q),
-                                              include.mean = T),
+min_aic <- Inf
+best_garch_order <- c(0, 0)
+
+for (p in 0:5) for (q in 0:5){
+    if ( p==0 && q == 0){
+      next
+    }
+    garch_spec <- ugarchspec(variance.model=list(garchOrder=c(p,q)),
+                      mean.model=list(armaOrder=c(best_order[1], best_order[3]),
+                                    include.mean = T),
+                                    distribution.model = "norm")
+    
+    garch_model <- tryCatch(ugarchfit(garch_spec, amzn_ts, solver = "hybrid"),
+                            error = function(err) FALSE,
+                            warning = function(err) FALSE)
+    
+                     
+    if (!is.logical(garch_model)){  # if convergence took place
+      current_aic <- infocriteria(garch_model)[1]
+      if(current_aic < min_aic){
+        min_aic <- current_aic
+        best_garch_order <- c(p, q)
+      }
+    }
+    else {
+      next
+    }
+  }
+
+garch_spec <- ugarchspec(variance.model=list(garchOrder=best_garch_order),
+                      mean.model=list(armaOrder=c(best_order[1], best_order[3]),
+                                    include.mean = T),
                                     distribution.model = "norm")
 
 garch_model <- ugarchfit(garch_spec, amzn_ts, solver = "hybrid")
+
 res <- garch_model@fit[["residuals"]]
 
 std_res <- (res - mean(res)) / sd(res)
@@ -180,16 +233,16 @@ qqline(std_res, col = "red")
 acf(std_res)  #looks good
 acf(std_res^2)  # looks good too:  only once exceedance
 
-infocriteria(garch_model)
 ```
+##4.
 
-We see fat-tailedness of the data.  We will use a t-distribution instead.
+From our QQplot, We see fat-tailedness of the data.  We will use a t-distribution to remedy this.  Both the ACF and PACF indicate that the standardized residuals of our ARMA(1, 1)-GARCH(2, 3) have no leftover structure.
 
 
 ```{r Garch_t}
 
-garch_spec <- ugarchspec(variance.model=list(garchOrder=c(1,1)),
-                      mean.model=list(armaOrder=c(3, 3),
+garch_spec <- ugarchspec(variance.model=list(garchOrder=best_garch_order),
+                      mean.model=list(armaOrder=c(best_order[1],best_order[3]),
                                               include.mean = T),
                                     distribution.model = "std")
 
@@ -202,13 +255,27 @@ qqPlot(std_res, dist = "t", df = garch_model@fit[["coef"]][["shape"]], id = FALS
 acf(std_res)  #looks good
 acf(std_res^2)  # looks good too:  only once exceedance
 
-infocriteria(garch_model)
-
 ```
 
-# 6
+Our QQ plot looks much more in-line: most of the datapoints lie within the 95% confidence envelopes.  
 
-Now we forecast!
+## 5.
+
+Our fitted model is of the form
+
+$$
+Y_{t} = \phi_1 Y_{t-1} + \theta_1 \epsilon_{t-1} + \epsilon_{t}
+$$
+
+$$
+\epsilon_t \sim \sigma_t \cdot t_\nu\hspace{1mm}; \hspace{1mm} \nu \approx 4.41
+$$
+$$
+\sigma^2_t = \omega + \alpha_1 \epsilon_{t-1} + \sum_{i = 1}^3 \beta_i \sigma^2_{t-i}
+$$
+## 6
+
+Now we will use our garch model to forecast future values of Amazon return series.
 
 ```{r Garch_forecast}
 garch_forecast <- ugarchforecast(garch_model, n.ahead = 5)
@@ -216,4 +283,4 @@ plot(garch_forecast, which = 1)
 ```
 
 
-The volatility and therefore distribution of returns is predictable!
+While the exact values returns are not predicable, we can predict how the distribution of returns evolves over time, assuming that an ARMA-GARCH model well-approximates the underlying processes that gave rise to our data in the first place.
